@@ -1,0 +1,11 @@
+{
+  "name": "paid-access-API",
+  "version": "1.0.0",
+  "description": "Library for paid-per-call API using payment channels",
+  "main": "start.js",
+  "license": "MIT",
+  "dependencies": {
+    "headless-obyte": "git+https://github.com/byteball/headless-obyte.git",
+    "ocore": "git+https://github.com/byteball/ocore.git#rocks-and-formulas"
+  }
+}
