@@ -2,7 +2,7 @@ const objectHash = require('ocore/object_hash.js');
 const conf = require('ocore/conf.js');
 
 
-function getAddressAndParametersForAA(addressA, addressB, id, version = conf.aa_version,){
+function getAddressAndParametersForAA(addressA, addressB, id, version = conf.aa_version){
 
 	const arrDefinition = ['autonomous agent', {
 		init: `{
