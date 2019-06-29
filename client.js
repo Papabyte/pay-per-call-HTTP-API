@@ -17,7 +17,7 @@ class Client {
 		this.filling_threshold = params.filling_threshold;
 		this.filling_amount = params.filling_amount;
 		this.price_list = params.price_list;
-		this.state = 'not_ready';
+		this.status = 'not_ready';
 	}
 
 	init(){
@@ -31,7 +31,7 @@ class Client {
 
 				mutex.lock(['refill_if_necessary_'+ this.urlServer], (unlock)=>{
 					this.refillChannelIfNecessary().then(()=>{
-						this.state = 'ready';
+						this.status = 'ready';
 						resolve("existing channel opened");
 						unlock();
 					});
@@ -48,27 +48,31 @@ class Client {
 					client_address: client_address
 				}
 			}, (error, res, body) => {
-				if (error) {
+				if (error || res.statusCode != 200) {
 					process.stdout.write("error when requesting channel" + error);
 					return setTimeout(()=>{
 						this.createChannel(resolve);
 					}, 60000);
 				}
 
-				if (res.statusCode === 200){
-
-					const objCalculatedAAParameters= channel.getAddressAndParametersForAA(body.server_address, client_address, body.id, body.version);
-					if (objCalculatedAAParameters.aa_address != body.aa_address)
-						return reject(`Incorrect AA address provided, calculated: ${objCalculatedAAParameters.aa_address} provided: ${body.aa_address}`);
+				if (body.is_successful){
+					const response = body.response;
+					if (typeof body.response != 'object'){
+						reject("bad response from server");
+						unlock();
+					}
+					const objCalculatedAAParameters= channel.getAddressAndParametersForAA(response.server_address, client_address, response.id, response.version);
+					if (objCalculatedAAParameters.aa_address != response.aa_address)
+						return reject(`Incorrect AA address provided, calculated: ${objCalculatedAAParameters.aa_address} provided: ${response.aa_address}`);
 
 
 						mutex.lock(['create_channel_with_provider'], async (unlock)=>{
 							const result = await toEs6.dbQuery("SELECT 1 FROM provider_channels WHERE url=?",[this.urlServer]);
 							if (result.length === 0){
-									this.aa_address = body.aa_address;
+									this.aa_address = response.aa_address;
 									this.arrDefinition = objCalculatedAAParameters.definition;
-									this.aa_id = body.id;
-									this.aa_version = body.version;
+									this.aa_id = response.id;
+									this.aa_version = response.version;
 									this.period = 1;
 									this.sendDefinitionAndFillChannel().then(()=>{
 										resolve("new channel opened");
@@ -81,9 +85,9 @@ class Client {
 
 						});
 
-					return resolve(JSON.stringify(body));
+					return resolve("channel created for " + this.urlServer);
 				}  else {
-					return reject(body);
+					return reject(body.error);
 				}
 			});
 		});
@@ -112,13 +116,14 @@ class Client {
 			var callbacks = composer.getSavingCallbacks({
 				ifNotEnoughFunds: ()=>{
 					setTimeout(()=>{
-						console.log(`not enough fund for ${this.filling_amount}`)
+						console.log(`not enough fund for ${this.filling_amount}`);
+						this.status("not_enough_fund");
 						this.sendDefinitionAndFillChannel();
 					}, 30000);
 				},
 				ifError: (error)=>{
 					setTimeout(()=>{
-						console.log(error)
+						console.log(error);
 						this.sendDefinitionAndFillChannel();
 					}, 30000);
 				},
@@ -154,6 +159,7 @@ class Client {
 					ifNotEnoughFunds: ()=>{
 						setTimeout(()=>{
 							console.log(`not enough fund for ${this.filling_amount}`)
+							this.status("not_enough_fund");
 							this.refillChannelIfNecessary();
 						}, 30000);
 					},
@@ -185,7 +191,7 @@ class Client {
 		const price = this.price_list[endpoint];
 		if (!price)
 			return handle("price_not_known_for_endpoint");
-		if (this.state != "ready")
+		if (this.status != "ready")
 			return handle("channel not ready");
 
 		mutex.lock(['call_api_'+ this.urlServer], async (unlock)=>{
@@ -207,15 +213,24 @@ class Client {
 			request.post(this.urlServer + "/" + endpoint, {
 				json: obj
 			}, async (error, res, body) => {
-				if (error) {
+				if (error || res.statusCode !== 200) {
 					process.stdout.write("error when calling API channel" + error);
 					unlock();
 					return handle(error);
 				}
-				if (res.statusCode === 200){
+				if (body.is_successful){
+					const response = body.response;
+					if (typeof body.response != 'object'){
+							unlock();
+							return handle("bad response from server");
+					}
 					await	toEs6.dbQuery("UPDATE provider_channels SET amount_spent=amount_spent+? WHERE aa_address=?",[price, this.aa_address]);
 					unlock();
-					return handle(null, body);
+					return handle(null, response);
+				} else {
+					unlock();
+					return handle(body.error);
+
 				}
 			});
 
@@ -246,7 +261,7 @@ function composeContentJointAndFill(from_address, amount, app, payload, callback
 function signMessage(message, address) {
 	return new Promise((resolve, reject) => {
 			console.error("signing...");
-			signedMessage.signMessage(message, address, headlessWallet.signer, true, function (err, objSignedPackage) {
+			signedMessage.signMessage(message, address, headlessWallet.signer, false, function (err, objSignedPackage) {
 					console.error("---- res", err, JSON.stringify(objSignedPackage, null, '\t'));
 					if (err)
 							return reject(err);
