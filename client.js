@@ -29,12 +29,9 @@ class Client {
 				this.aa_address = existingChannel[0].aa_address;
 				this.period = existingChannel[0].period;
 
-				mutex.lock(['refill_if_necessary_'+ this.urlServer], (unlock)=>{
-					this.refillChannelIfNecessary().then(()=>{
-						this.status = 'ready';
-						resolve("existing channel opened");
-						unlock();
-					});
+				this.refillChannelIfNecessary().then(()=>{
+					this.status = 'ready';
+					resolve("existing channel opened");
 				});
 			}
 		});
@@ -51,6 +48,7 @@ class Client {
 				if (error || res.statusCode != 200) {
 					process.stdout.write("error when requesting channel" + error);
 					return setTimeout(()=>{
+						this.status = 'ready';
 						this.createChannel(resolve);
 					}, 60000);
 				}
@@ -64,7 +62,6 @@ class Client {
 					const objCalculatedAAParameters= channel.getAddressAndParametersForAA(response.server_address, client_address, response.id, response.version);
 					if (objCalculatedAAParameters.aa_address != response.aa_address)
 						return reject(`Incorrect AA address provided, calculated: ${objCalculatedAAParameters.aa_address} provided: ${response.aa_address}`);
-
 
 						mutex.lock(['create_channel_with_provider'], async (unlock)=>{
 							const result = await toEs6.dbQuery("SELECT 1 FROM provider_channels WHERE url=?",[this.urlServer]);
@@ -144,46 +141,51 @@ class Client {
 
 	async refillChannelIfNecessary () {
 		return new Promise(async (resolve, reject) => {
+			mutex.lock(['refill_if_necessary_'+ this.urlServer], async (unlock)=>{
+				const result = await toEs6.dbQuery("SELECT (SUM(amount) - (SELECT amount_spent FROM provider_channels WHERE aa_address=?)) \n\
+				AS free_balance_on_aa FROM outputs CROSS JOIN units USING(unit) CROSS JOIN unit_authors USING(unit) WHERE is_spent=0 AND asset IS NULL AND outputs.address=? AND unit_authors.address=?",[this.aa_address,this.aa_address, await this.getMyAddress() ]);
 
-			const result = await toEs6.dbQuery("SELECT (SUM(amount) - (SELECT amount_spent FROM provider_channels WHERE aa_address=?)) \n\
-			AS free_balance_on_aa FROM outputs CROSS JOIN units USING(unit) CROSS JOIN unit_authors USING(unit) WHERE is_spent=0 AND asset IS NULL AND outputs.address=? AND unit_authors.address=?",[this.aa_address,this.aa_address, await this.getMyAddress() ]);
+				if (result.length == 0)
+					throw Error("No outputs to AA-address"); 
 
-			if (result.length == 0)
-				throw Error("No outputs to AA-address"); 
+				if (result[0].free_balance_on_aa < this.filling_threshold){
 
-			if (result[0].free_balance_on_aa < this.filling_threshold){
-
-				var composer = require('ocore/composer.js');
-				var network = require('ocore/network.js');
-				var callbacks = composer.getSavingCallbacks({
-					ifNotEnoughFunds: ()=>{
-						setTimeout(()=>{
+					var composer = require('ocore/composer.js');
+					var network = require('ocore/network.js');
+					var callbacks = composer.getSavingCallbacks({
+						ifNotEnoughFunds: ()=>{
+							unlock();
 							console.log(`not enough fund for ${this.filling_amount}`)
-							this.status("not_enough_fund");
-							this.refillChannelIfNecessary();
-						}, 30000);
-					},
-					ifError: (error)=>{
-						setTimeout(()=>{
-							console.log(error)
-							this.refillChannelIfNecessary();
-						}, 30000);
-					},
-					ifOk: function(objJoint){
-						network.broadcastJoint(objJoint);
-						resolve();
-					}
-				})
-				composer.composeJoint({
-					paying_addresses: [await this.getMyAddress()], 
-					outputs: [{address: await this.getMyAddress(), amount: 0}, {address: this.aa_address, amount: this.filling_amount}], 
-					signer: headlessWallet.signer, 
-					callbacks: callbacks
-				});
-			} else {
-				resolve();
-			}
-				
+							this.status = "not_enough_fund";
+
+							setTimeout(()=>{
+								this.refillChannelIfNecessary();
+							}, 30000);
+						},
+						ifError: (error)=>{
+							console.error(error)
+							unlock();
+							setTimeout(()=>{
+								this.refillChannelIfNecessary();
+							}, 30000);
+						},
+						ifOk: function(objJoint){
+							network.broadcastJoint(objJoint);
+							unlock();
+							resolve();
+						}
+					})
+					composer.composeJoint({
+						paying_addresses: [await this.getMyAddress()], 
+						outputs: [{address: await this.getMyAddress(), amount: 0}, {address: this.aa_address, amount: this.filling_amount}], 
+						signer: headlessWallet.signer, 
+						callbacks: callbacks
+					});
+				} else {
+					unlock();
+					resolve();
+				}
+			});
 		});
 	}
 
@@ -218,14 +220,16 @@ class Client {
 					unlock();
 					return handle(error);
 				}
+				console.error(JSON.stringify(body));
 				if (body.is_successful){
 					const response = body.response;
-					if (typeof body.response != 'object'){
+					if (!body.response){
 							unlock();
 							return handle("bad response from server");
 					}
 					await	toEs6.dbQuery("UPDATE provider_channels SET amount_spent=amount_spent+? WHERE aa_address=?",[price, this.aa_address]);
 					unlock();
+					this.refillChannelIfNecessary();
 					return handle(null, response);
 				} else {
 					unlock();

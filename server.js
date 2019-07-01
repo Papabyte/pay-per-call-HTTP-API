@@ -9,13 +9,59 @@ const headlessWallet = require('headless-obyte');
 const eventBus = require('ocore/event_bus.js');
 const signedMessage = require('ocore/signed_message.js');
 const mutex = require('ocore/mutex.js');
+const conf = require('ocore/conf.js');
+const myWitnesses = require('ocore/my_witnesses.js');
+const light = require('ocore/light.js');
 
 
-eventBus.on('headless_wallet_ready', function(){
-	db.query("SELECT aa_address FROM client_channels",function(rows){
-		network.requestHistoryFor([], Object.values(rows));
+eventBus.on('headless_wallet_ready', function() {
+	if (!conf.bLight)
+		return;
+	db.query("SELECT aa_address FROM client_channels", function(rows) {
+		if(!rows[0])
+			return;
+
+		const arrAddresses = Object.values(rows).map((row) => {
+			return row.aa_address
+		});
+
+		myWitnesses.readMyWitnesses(function(arrWitnesses) {
+			if(arrWitnesses.length === 0) // first start, witnesses not set yet
+				return handleResult(null);
+			var objHistoryRequest = {
+				witnesses: arrWitnesses
+			};
+			if(arrAddresses.length > 0)
+				objHistoryRequest.addresses = arrAddresses;
+			objHistoryRequest.last_stable_mci = 0;
+			var strAddressList = arrAddresses.map(db.escape).join(', ');
+			db.query(
+				"SELECT unit FROM unit_authors CROSS JOIN units USING(unit) WHERE is_stable=1 AND address IN(" + strAddressList + ") \n\
+						UNION \n\
+						SELECT unit FROM outputs CROSS JOIN units USING(unit) WHERE is_stable=1 AND address IN(" + strAddressList + ")",
+			function(rows) {
+				if(rows.length)
+					objHistoryRequest.known_stable_units = rows.map(function(row) {
+						return row.unit;
+					});
+					network.requestFromLightVendor('light/get_history', objHistoryRequest, function(ws, request, response) {
+					if(response.error) {
+						console.log(response.error);
+					}
+					light.processHistory(response, arrWitnesses, {
+						ifError: function(err) {
+							sendError(ws, err);
+						},
+						ifOk: function() {
+							console.log("aa addresses history processed");
+						}
+					});
+				});
+			});
+		});
 	});
 });
+
 
 class Server {
 	constructor(port, endPoints) {
@@ -89,9 +135,10 @@ class Server {
 			} else {
 				console.error("message validated");
 
-				mutex.lock(["check_payment_"+objSignedMessage.aa_address],async (unlock)=>{
+				mutex.lock(["check_payment_"+objSignedMessage.channel],async (unlock)=>{
+					console.error(JSON.stringify(objSignedMessage));
 
-					var result = await toEs6.dbQuery("SELECT amount_spent_by_user,(amount_spent_by_user-due_amount_by_user) AS credit FROM client_channels WHERE aa_address=?",[objSignedMessage.aa_address]);
+					var result = await toEs6.dbQuery("SELECT amount_spent_by_user,(amount_spent_by_user-due_amount_by_user) AS credit FROM client_channels WHERE aa_address=?",[objSignedMessage.channel]);
 					if (!result[0]){
 						unlock();
 						return handle("no channel found");
@@ -99,16 +146,23 @@ class Server {
 					const credit = result[0].credit;
 					const amount_already_spent = result[0].amount_spent_by_user;
 					if (credit >= price){
-						toEs6.dbQuery("UPDATE client_channels SET due_amount_by_user=due_amount_by_user+? WHERE aa_address=?",[price, objSignedMessage.aa_address]);
+						toEs6.dbQuery("UPDATE client_channels SET due_amount_by_user=due_amount_by_user+? WHERE aa_address=?",[price, objSignedMessage.channel]);
 						unlock();
 						return handle(null);
 					}
+					console.error("price " + price);
+					console.error("objSignedMessage.amount_spent " + objSignedMessage.amount_spent);
+					console.error("amount_already_spent " + amount_already_spent);
+
 
 					if (credit + (objSignedMessage.amount_spent - amount_already_spent ) >= price){
-						result = await toEs6.dbQuery("SELECT SUM(amount) AS stable_balance_on_aa FROM outputs CROSS JOIN units USING(unit) WHERE is_spent=0 AND asset IS NULL AND is_stable=1 AND is_serial=1",[objSignedMessage.aa_address]);
-							if (result[0].stable_balance_on_aa >= objSignedMessage.amount_spent){
-								toEs6.dbQuery("UPDATE client_channels SET due_amount_by_user=due_amount_by_user+?,amount_spent_by_user=amount_spent_by_user+?,last_message_from_user=? WHERE aa_address=?",
-								[price,objSignedMessage.amount_spent, JSON.stringify(objSignedMessage), objSignedMessage.aa_address]);
+						result = await toEs6.dbQuery("SELECT SUM(amount) AS stable_balance_on_aa FROM outputs CROSS JOIN units USING(unit) WHERE is_spent=0 AND asset IS NULL AND is_stable=1 AND is_serial=1 AND outputs.address=?",[objSignedMessage.channel]);
+						console.error("amount_alresult[0].stable_balance_on_aa " + result[0].stable_balance_on_aa);
+
+						 	
+						if (result[0].stable_balance_on_aa >= objSignedMessage.amount_spent){
+								toEs6.dbQuery("UPDATE client_channels SET due_amount_by_user=due_amount_by_user+?,amount_spent_by_user=?,last_message_from_user=? WHERE aa_address=?",
+								[price,objSignedMessage.amount_spent, JSON.stringify(objSignedMessage), objSignedMessage.channel]);
 								unlock();
 								return handle(null);
 							} else {

@@ -1,7 +1,5 @@
 "use strict";
-
 const eventBus = require('ocore/event_bus.js');
-
 const Server = require('./server');
 
 const endPoints = {
@@ -9,7 +7,7 @@ const endPoints = {
 		callback: (lat, long)=>{
 			return "20°C";
 		},
-		price: 20
+		price: 20000
 	},
 	humidity : {
 		callback: (lat, long)=>{
