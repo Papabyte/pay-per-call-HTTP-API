@@ -12,56 +12,64 @@ const mutex = require('ocore/mutex.js');
 const conf = require('ocore/conf.js');
 const myWitnesses = require('ocore/my_witnesses.js');
 const light = require('ocore/light.js');
+const walletGeneral = require('ocore/wallet_general.js');
 
 
 eventBus.on('headless_wallet_ready', function() {
 	if (!conf.bLight)
 		return;
-	db.query("SELECT aa_address FROM client_channels", function(rows) {
-		if(!rows[0])
-			return;
 
-		const arrAddresses = Object.values(rows).map((row) => {
-			return row.aa_address
-		});
-
-		myWitnesses.readMyWitnesses(function(arrWitnesses) {
-			if(arrWitnesses.length === 0) // first start, witnesses not set yet
-				return handleResult(null);
-			var objHistoryRequest = {
-				witnesses: arrWitnesses
-			};
-			if(arrAddresses.length > 0)
-				objHistoryRequest.addresses = arrAddresses;
-			objHistoryRequest.last_stable_mci = 0;
-			var strAddressList = arrAddresses.map(db.escape).join(', ');
-			db.query(
-				"SELECT unit FROM unit_authors CROSS JOIN units USING(unit) WHERE is_stable=1 AND address IN(" + strAddressList + ") \n\
-						UNION \n\
-						SELECT unit FROM outputs CROSS JOIN units USING(unit) WHERE is_stable=1 AND address IN(" + strAddressList + ")",
-			function(rows) {
-				if(rows.length)
-					objHistoryRequest.known_stable_units = rows.map(function(row) {
-						return row.unit;
-					});
-					network.requestFromLightVendor('light/get_history', objHistoryRequest, function(ws, request, response) {
-					if(response.error) {
-						console.log(response.error);
-					}
-					light.processHistory(response, arrWitnesses, {
-						ifError: function(err) {
-							sendError(ws, err);
-						},
-						ifOk: function() {
-							console.log("aa addresses history processed");
-						}
-					});
-				});
-			});
-		});
-	});
 });
 
+eventBus.on('my_transactions_became_stable', async function(arrUnits){
+	console.log("my_transactions_became_stable");
+		const new_units = await toEs6.dbQuery("SELECT units.unit,outputs.address,period,status,outputs.amount FROM messages \n\
+		CROSS JOIN units USING(unit)\n\
+		CROSS JOIN outputs USING(unit)\n\
+		CROSS JOIN unit_authors USING(unit)\n\
+		INNER JOIN client_channels ON (outputs.address=client_channels.aa_address AND unit_authors.address=client_channels.client_address) \n\
+		WHERE unit IN("+arrUnits.map(db.escape).join(',')+") AND outputs.asset IS NULL ORDER BY main_chain_index ASC");
+		console.log(JSON.stringify(new_units));
+		//[{"unit":"X1D4NcFM1fv8yXWbtEr0KdIWEJ3uC52IT6Y/EOL3WcM=","address":"4GUM5MFQKUANUYYAGCX56RXJR5PHSIIE","period":0,"client_address":"new","amount":150000}]
+		if (new_units.length === 0){
+			unlock();
+			return console.log("nothing concerns payment channel in new units received");
+		}
+
+		new_units.forEach(async (new_unit)=>{
+			if (new_unit.amount && new_unit.amount >= 1e5 && (new_unit.status=='new' || new_unit.status=='closed')){
+				toEs6.dbQuery("UPDATE client_channels SET period=period+1,status='open' WHERE aa_address=?",[new_unit.address]);
+				return console.log("channel " + new_unit.address + " open");
+			}
+
+			const payload_rows =	await toEs6.dbQuery("SELECT payload FROM messages WHERE unit=? ORDER BY message_index ASC LIMIT 1",[new_unit.unit]);
+			if (!payload_rows[0])
+				return console.log("no message in " + new_unit.address);
+			try{
+				var payload = JSON.parse(payload_rows[0].payload);
+			} catch (e) {
+				return console.log("invalid payload");
+			}
+			if (payload.close &&  payload.transferredFromMe){
+				console.log("payload " + JSON.stringify(payload));
+				onPeerCloseChannel(new_unit.address, payload.transferredFromMe);
+			}
+		});
+
+
+});
+
+
+async function onPeerCloseChannel(aa_address, amount_declared_spent){
+	const rows = await toEs6.dbQuery("SELECT due_amount_by_user FROM client_channels WHERE aa_address=?",[aa_address]);
+	if (!rows[0])
+		throw Error("closed channel not found");
+
+	if (rows[0].due_amount_by_user <= amount_declared_spent){
+		console.log("due amount by user: " + rows[0].due_amount_by_user + " amount_declared_spent: " + amount_declared_spent)
+	}
+
+}
 
 class Server {
 	constructor(port, endPoints) {
@@ -82,9 +90,10 @@ class Server {
 
 					db.query("INSERT INTO client_channels (client_address) VALUES (?)",[request.body.client_address], function(result){
 						const objAAParameters= channel.getAddressAndParametersForAA(server_address, request.body.client_address, result.insertId);
-						db.query("UPDATE client_channels SET aa_address=? WHERE id=?",[objAAParameters.aa_address, result.insertId], function(){
-							network.addLightWatchedAddress(objAAParameters.aa_address);
-							response.send({is_successful: true, response: Object.assign({server_address:server_address}, objAAParameters)});
+						walletGeneral.addWatchedAddress(objAAParameters.aa_address, ()=>{
+							db.query("UPDATE client_channels SET aa_address=? WHERE id=?",[objAAParameters.aa_address, result.insertId], function(){
+								response.send({is_successful: true, response: Object.assign({server_address:server_address}, objAAParameters)});
+							});
 						});
 					});
 				});
@@ -92,8 +101,6 @@ class Server {
 		});
 
 		this.configureEndPoints(endPoints);
-
-
 		this.app.listen(port);
 
 	}
@@ -153,7 +160,6 @@ class Server {
 					console.error("price " + price);
 					console.error("objSignedMessage.amount_spent " + objSignedMessage.amount_spent);
 					console.error("amount_already_spent " + amount_already_spent);
-
 
 					if (credit + (objSignedMessage.amount_spent - amount_already_spent ) >= price){
 						result = await toEs6.dbQuery("SELECT SUM(amount) AS stable_balance_on_aa FROM outputs CROSS JOIN units USING(unit) WHERE is_spent=0 AND asset IS NULL AND is_stable=1 AND is_serial=1 AND outputs.address=?",[objSignedMessage.channel]);

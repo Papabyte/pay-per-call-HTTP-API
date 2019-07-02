@@ -17,7 +17,7 @@ class Client {
 		this.filling_threshold = params.filling_threshold;
 		this.filling_amount = params.filling_amount;
 		this.price_list = params.price_list;
-		this.status = 'not_ready';
+		this.status = 'new';
 	}
 
 	init(){
@@ -30,7 +30,7 @@ class Client {
 				this.period = existingChannel[0].period;
 
 				this.refillChannelIfNecessary().then(()=>{
-					this.status = 'ready';
+					this.status = 'open';
 					resolve("existing channel opened");
 				});
 			}
@@ -48,7 +48,6 @@ class Client {
 				if (error || res.statusCode != 200) {
 					process.stdout.write("error when requesting channel" + error);
 					return setTimeout(()=>{
-						this.status = 'ready';
 						this.createChannel(resolve);
 					}, 60000);
 				}
@@ -73,6 +72,7 @@ class Client {
 									this.period = 1;
 									this.sendDefinitionAndFillChannel().then(()=>{
 										resolve("new channel opened");
+										this.status = 'open';
 										unlock();
 									});
 							} else {
@@ -89,6 +89,50 @@ class Client {
 			});
 		});
 	}
+
+	closeChannel(){
+		return new Promise(async (resolve, reject) => {
+			if (this.status == 'new')
+				return reject("channel was never opened");
+			if (this.status == 'closing')
+				return reject("channel is already closing");
+
+			const	existingChannel = await toEs6.dbQuery("SELECT aa_address,period,amount_spent FROM provider_channels WHERE url=?",[this.urlServer]);
+
+				var objDataMessage = {
+					app: 'data',
+					payload_location: 'inline',
+					payload: {
+							close: 1,
+							transferredFromMe: existingChannel[0].amount_spent
+						},
+				};
+				objDataMessage.payload_hash = objectHash.getBase64Hash(objDataMessage.payload);
+				var messages = [objDataMessage];
+				var opts = { amount: 1e4, paying_addresses: [await this.getMyAddress()], to_address: this.aa_address, messages: messages };
+				opts.change_address = opts.paying_addresses[0];
+				
+				headlessWallet.sendMultiPayment(opts, function (err, unit) {
+					if (err){
+						console.error('------- sent, err=' + err + ', unit=' + unit);
+						reject(err);
+					} else {
+						this.status = 'closing';
+						resolve("close message sent");
+					}
+				
+				});
+		});
+	}
+
+	confirmChannelClosure(){
+		return new Promise(async (resolve, reject) => {
+			if (this.status == 'closing')
+				return reject("channel already closing");
+
+		});
+	}
+
 
 	getMyAddress(){
 		return new Promise(async (resolve, reject) => {
@@ -114,7 +158,7 @@ class Client {
 				ifNotEnoughFunds: ()=>{
 					setTimeout(()=>{
 						console.log(`not enough fund for ${this.filling_amount}`);
-						this.status("not_enough_fund");
+						this.status="not_enough_fund";
 						this.sendDefinitionAndFillChannel();
 					}, 30000);
 				},
@@ -193,8 +237,8 @@ class Client {
 		const price = this.price_list[endpoint];
 		if (!price)
 			return handle("price_not_known_for_endpoint");
-		if (this.status != "ready")
-			return handle("channel not ready");
+		if (this.status != "open")
+			return handle("channel not open");
 
 		mutex.lock(['call_api_'+ this.urlServer], async (unlock)=>{
 			var result = await toEs6.dbQuery("SELECT (SUM(amount) - (SELECT amount_spent FROM provider_channels WHERE aa_address=?)) \n\
