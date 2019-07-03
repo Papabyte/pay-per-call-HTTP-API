@@ -112,7 +112,7 @@ class Client {
 				var opts = { amount: 1e4, paying_addresses: [await this.getMyAddress()], to_address: this.aa_address, messages: messages };
 				opts.change_address = opts.paying_addresses[0];
 				
-				headlessWallet.sendMultiPayment(opts, function (err, unit) {
+				headlessWallet.sendMultiPayment(opts, (err, unit) =>{
 					if (err){
 						console.error('------- sent, err=' + err + ', unit=' + unit);
 						reject(err);
@@ -281,8 +281,6 @@ class Client {
 
 				}
 			});
-
-
 
 		});
 	}

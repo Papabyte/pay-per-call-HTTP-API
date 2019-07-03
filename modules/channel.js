@@ -2,7 +2,7 @@ const objectHash = require('ocore/object_hash.js');
 const conf = require('ocore/conf.js');
 
 
-function getAddressAndParametersForAA(addressA, addressB, id, version = conf.aa_version,){
+function getAddressAndParametersForAA(addressA, addressB, id, version = conf.aa_version){
 
 	const arrDefinition = ['autonomous agent', {
 		init: `{
@@ -21,6 +21,15 @@ function getAddressAndParametersForAA(addressA, addressB, id, version = conf.aa_
 				{ // refill the AA
 					if: `{ $bFromParties AND trigger.output[[asset=base]] >= 1e5 }`,
 					messages: [
+						{
+							app: 'data',
+							payload: {
+								open: 1,
+								period: "{var['period'] otherwise 1}",
+								balanceA :"{var['balanceA'] + ($party == 'A' ? trigger.output[[asset=base]] : 0)}",
+								balanceB :"{var['balanceB'] + ($party == 'B' ? trigger.output[[asset=base]] : 0)}"
+							}
+						},
 						{
 							app: 'state',
 							state: `{
@@ -94,6 +103,13 @@ function getAddressAndParametersForAA(addressA, addressB, id, version = conf.aa_
 							}
 						},
 						{
+							app: 'data',
+							payload: {
+								closed: 1,
+								period: "{var['period']}"
+							}
+						},
+						{
 							app: 'state',
 							state: `{
 								var['period'] += 1;
@@ -136,6 +152,13 @@ function getAddressAndParametersForAA(addressA, addressB, id, version = conf.aa_
 							}
 						},
 						{
+							app: 'data',
+							payload: {
+								closed: 1,
+								period: "{var['period']}"
+							},
+						},
+						{
 							app: 'state',
 							state: `{
 								var['period'] += 1;
@@ -147,6 +170,7 @@ function getAddressAndParametersForAA(addressA, addressB, id, version = conf.aa_
 								var['spentByB'] = false;
 							}`
 						},
+
 					]
 				},
 			]

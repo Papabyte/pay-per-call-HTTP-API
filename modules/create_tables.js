@@ -12,6 +12,7 @@ db.query("CREATE TABLE IF NOT EXISTS client_channels (  \n\
 	period INTEGER DEFAULT 0,\n\
 	last_message_from_user TEXT,\n\
 	status VARCHAR(30) DEFAULT 'new',\n\
+	last_updated_mci INTEGER DEFAULT 0,\n\
 	creation_date TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP\n\
 );");
 
@@ -24,5 +25,6 @@ db.query("CREATE TABLE IF NOT EXISTS provider_channels (  \n\
 	period INTEGER DEFAULT 0,\n\
 	aa_address CHAR(32) UNIQUE, \n\
 	status VARCHAR(30) DEFAULT 'new',\n\
+	last_updated_mci INTEGER DEFAULT 0,\n\
 	creation_date TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP\n\
 );");
