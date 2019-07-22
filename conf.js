@@ -4,17 +4,16 @@ exports.bSingleAddress = true;
 
 exports.WS_PROTOCOL = "ws://";
 exports.hub = process.env.testnet ? 'obyte.org/bb-test' : 'obyte.org/bb';
-exports.deviceName = 'AA-channel-lib';
+exports.deviceName = 'API server';
 exports.permanent_pairing_secret = '0000';
 exports.control_addresses = [''];
 
-exports.aa_version = 1;
 
 exports.isHighAvaibilityNode =  false;
 
-exports.enabledComLayers = ['http','obyte-messenger'];
+exports.enabledComLayers = ['http'];
 
 exports.isHttpServer = true;
 exports.httpDefaultPort = 6800;
 
-console.log('paid access API conf');
+console.log('API server');
