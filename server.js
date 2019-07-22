@@ -51,7 +51,7 @@ channels.setCallBackForPaymentReceived(function(amount, arrOrder, peer_address, 
 		if (error)
 			return handle({error:error});
 		else
-			return handle(result);
+			return handle(null, result);
 	})
 
 });
