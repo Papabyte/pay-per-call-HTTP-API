@@ -10,3 +10,6 @@ exports.control_addresses = [''];
 exports.minChannelTimeoutInSecond = 800; // minimal channel timeout acceptable
 exports.maxChannelTimeoutInSecond = 1500;  // maximal channel timeout acceptable
 exports.defaultTimeoutInSecond = 1000; // default timeout for channel creation
+
+
+console.log("server conf done");
