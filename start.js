@@ -1,6 +1,7 @@
 
 const channels = require("aa-channels-lib");
 const eventBus = require("ocore/event_bus.js");
+const validationUtils = require('ocore/validation_utils.js');
 
 var isHeadlessReady = false;
 
@@ -33,14 +34,16 @@ class Server {
 		channels.setCallBackForPaymentReceived((amount, asset, arrReceivedFromPeer, aa_address, handle) => {
 			const endPoint = arrReceivedFromPeer[0];
 			const arrAguments = arrReceivedFromPeer.slice(1);
-			// paid amount and price matches, we execute result callback and send data to peer
+
+			//we execute the function associated to the endpoint
+			//in return, we should obtain an error or a result, and possibly an amount that has to be refunded
 			this.endPoints[endPoint](amount, asset, arrAguments, function(error, result, refunded_amount) {
 				if (error) {
 					channels.getPaymentPackage(amount, aa_address, function(error, objPaymentPackage){
 						return handle({error: error, refund: objPaymentPackage});
 					});
 				} else {
-					if (refunded_amount > 0){
+					if (refunded_amount > 0){ // if we were instructed to send a refund, we get the corresponding payment package
 						channels.getPaymentPackage(amount, aa_address, function(error, objPaymentPackage){
 							if (error)
 								return handle({result: result});
@@ -108,12 +111,15 @@ class Client {
 	call(endpoint, amount, arrArguments){
 		return new Promise((resolve, reject) => {
 
+			if (!validationUtils.isPositiveInteger(amount))
+				return reject("amount must be a positive integer");
 			if (!Array.isArray(arrArguments))
 				return reject("arrArguments must be an array");
+
 			channels.sendMessageAndPay(this.aa_address, [endpoint].concat(arrArguments), amount, (error, response)=>{
 
 				if (error){
-					if (error.refund){
+					if (error.refund){ // alongside with error a refund has been returned, we verify its payment package
 						channels.verifyPaymentPackage(error.refund, function(verification_error, amount){
 							if (verification_error){
 								return resolve({
@@ -134,7 +140,7 @@ class Client {
 						});
 					}
 				} else {
-					if (response.refund){
+					if (response.refund){ // alongside with result a refund has been returned, we verify its payment package
 						channels.verifyPaymentPackage(error.refund, function(verification_error, amount){
 							if (verification_error){
 								return resolve({
