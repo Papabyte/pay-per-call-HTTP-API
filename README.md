@@ -1,6 +1,6 @@
 # pay-per-call-API
 
-This package provides an easy way to set-up an HTTP API where users pay instantly queries by queries through [O<sub>byte</sub> payment channels](https://github.com/Papabyte/aa-channels-lib/).
+This package provides an easy way to set-up an HTTP API where users pay instantly query by query through [O<sub>byte</sub> payment channels](https://github.com/Papabyte/aa-channels-lib/).
 
 
 ## Server side
