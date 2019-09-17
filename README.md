@@ -5,7 +5,7 @@ This package provides an easy way to set-up an API where users pay instantly que
 
 ## Server side
 
-* Add to your project `npm install --save https://github.com/Papabyte/aa-channels-lib/`
+* Add to your project `npm install --save https://github.com/Papabyte/pay-per-call-API`
 
 * Create a conf.js file in your project root folder
 
@@ -32,6 +32,7 @@ exports.unconfirmedAmountsLimitsByAssetOrChannel = { // limits for accepting pay
 }
 
 ```
+* Add to your project `npm install --save https://github.com/Papabyte/pay-per-call-API`
 
 * Require module `const payPerCall = require("pay-per-call-API");`
 
@@ -48,6 +49,13 @@ const endPoints = {
 		return handle(error, result, amount_refunded);
 	}
 }
+```
+
+* Start server
+```javascript
+server.startWhenReady().then(function(){ // server will actually starts after the passphrase for headless wallet is entered
+	console.error("server started");
+});
 ```
 
 ## Client side
@@ -68,7 +76,16 @@ exports.defaultTimeoutInSecond = 1000; // default timeout for channel creation
 
 * Require module `const payPerCall = require("pay-per-call-API");`
 
-* Initialize channel `const client = new payPerCall.Client(peer url, asset, deposits amount, refill threshold);`
+* Initialize `const client = new payPerCall.Client(peer url, asset, deposits amount, refill threshold);`
+
+* Start client
+```javascript
+client.startWhenReady().then(async function(){ // client will actually starts after the passphrase for headless wallet is entered
+	console.error("client started");
+});
+```
+
+After client started, these functions are available:
 
 * Call endpoint `const result = await client.call(endpoint, amount, [argument1, argument2]);`
 

@@ -32,6 +32,8 @@ class Server {
 	}
 
 	start(){
+		if (!isHeadlessReady)
+			throw Error("Headless not ready");
 		channels.startHttpServer(this.port);
 		channels.setCallBackForPaymentReceived((amount, asset, arrReceivedFromPeer, aa_address, handle) => {
 			const endPoint = arrReceivedFromPeer[0];
@@ -64,6 +66,8 @@ class Server {
 	}
 
 	sweepChannelsIfPeriodExpired(sweepingPeriod){
+		if (!isHeadlessReady)
+			throw Error("Headless not ready");
 		db.query("SELECT aa_address FROM channels INNER JOIN units ON units.main_chain_index=channels.last_updated_mci \n\
 		WHERE status='open' AND (strftime('%s', 'now')-timestamp) > ?", [sweepingPeriod], (rows)=>{
 			rows.forEach((row)=>{
@@ -85,16 +89,16 @@ class Client {
 	}
 
 	startWhenReady(){
-		return new Promise((resolve, error) => {
+		return new Promise((resolve, reject) => {
 			if (isHeadlessReady){
 				setTimeout(()=>{
-					this.start().then(resolve, error);
+					this.start().then(resolve, reject);
 				}, 2000);
 			}
 			else {
 				eventBus.on('headless_wallet_ready', ()=>{
 					setTimeout(()=>{
-						this.start().then(resolve, error);
+						this.start().then(resolve, reject);
 					}, 2000);				
 				});
 			}
@@ -103,6 +107,8 @@ class Client {
 
 	start(){
 		return new Promise((resolve, reject) => {
+			if (!isHeadlessReady)
+				throw Error("Headless not ready");
 			channels.getChannelsForPeer(this.peer_url, null, (error, aa_addresses) => {
 				if (error) {
 					console.log("no channel found for this peer, I'll create one");
@@ -126,7 +132,8 @@ class Client {
 
 	call(endpoint, amount, arrArguments){
 		return new Promise((resolve, reject) => {
-
+			if (!isHeadlessReady)
+				return reject("Headless not ready");
 			if (!validationUtils.isPositiveInteger(amount))
 				return reject("amount must be a positive integer");
 			if (!Array.isArray(arrArguments))
@@ -183,7 +190,9 @@ class Client {
 	}
 
 	sweep() {
-		return new Promise((resolve) => {
+		return new Promise((resolve, reject) => {
+			if (!isHeadlessReady)
+				return reject("Headless not ready");
 			channels.close(this.aa_address, (error)=>{
 				if (error){
 					console.log(error + ", will retry later");
@@ -198,7 +207,9 @@ class Client {
 	}
 
 	close() {
-		return new Promise((resolve) => {
+		return new Promise((resolve, reject) => {
+			if (!isHeadlessReady)
+				return reject("Headless not ready");
 			this.sweep().then(()=>{
 				channels.setAutoRefill(this.aa_address, 0, 0, ()=>{
 					return resolve();
@@ -206,7 +217,6 @@ class Client {
 			});
 		});
 	}
-
 }
 
 exports.Server = Server;
