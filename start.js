@@ -2,6 +2,7 @@
 const channels = require("aa-channels-lib");
 const eventBus = require("ocore/event_bus.js");
 const validationUtils = require('ocore/validation_utils.js');
+const db = require('ocore/db.js');
 
 var isHeadlessReady = false;
 
@@ -10,9 +11,10 @@ eventBus.on('headless_wallet_ready', function(){
 });
 
 class Server {
-	constructor(endPoints, port) {
+	constructor(endPoints, port, sweepingPeriod) {
 		this.endPoints = endPoints;
 		this.port = port;
+		this.sweepingPeriod = sweepingPeriod;
 	}
 
 	startWhenReady(){
@@ -55,9 +57,21 @@ class Server {
 					}
 				}
 			});
-		
+		});
+		setInterval(()=>{
+			this.sweepChannelsIfPeriodExpired(this.sweepingPeriod);
+		}, 60000);
+	}
+
+	sweepChannelsIfPeriodExpired(sweepingPeriod){
+		db.query("SELECT aa_address FROM channels INNER JOIN units ON units.main_chain_index=channels.last_updated_mci \n\
+		WHERE status='open' AND (strftime('%s', 'now')-timestamp) > ?", [sweepingPeriod], (rows)=>{
+			rows.forEach((row)=>{
+				channels.close(row.aa_address, (error)=>{});
+			})
 		});
 	}
+
 }
 
 
@@ -98,10 +112,12 @@ class Client {
 					}, (error, aa_address)=>{
 						if (error)
 							return reject(error);
-						this.aa_address = aa_address
+						this.aa_address = aa_address;
+						channels.setAutoRefill(aa_address, this.fill_amount, this.refill_threshold, ()=>{});
 					});
 				} else {
 					this.aa_address = aa_addresses[0];
+					channels.setAutoRefill(aa_addresses[0], this.fill_amount, this.refill_threshold, ()=>{});
 					return resolve();
 				}
 			});
@@ -165,6 +181,32 @@ class Client {
 			});
 		});
 	}
+
+	sweep() {
+		return new Promise((resolve) => {
+			channels.close(this.aa_address, (error)=>{
+				if (error){
+					console.log(error + ", will retry later");
+					setTimeout(()=>{
+						this.close().then(()=>{
+							return resolve();
+						})
+					}, 30000)
+				}
+			})
+		});
+	}
+
+	close() {
+		return new Promise((resolve) => {
+			this.sweep().then(()=>{
+				channels.setAutoRefill(this.aa_address, 0, 0, ()=>{
+					return resolve();
+				});
+			});
+		});
+	}
+
 }
 
 exports.Server = Server;

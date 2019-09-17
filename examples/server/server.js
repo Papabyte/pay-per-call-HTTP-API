@@ -33,7 +33,7 @@ const endPoints = {
 }
 
 
-const server = new payPerCall.Server(endPoints, 6000); // we listen on port 6000
+const server = new payPerCall.Server(endPoints, 6000, 60*20); // we listen on port 6000
 
 server.startWhenReady().then(function(){ // server will actually starts after the passphrase for headless wallet is entered
 	console.error("server started") 
