@@ -15,13 +15,10 @@ exports.bLight = true;
 exports.bSingleAddress = true;
 
 exports.hub = process.env.testnet ? 'obyte.org/bb-test' : 'obyte.org/bb';
-exports.deviceName = 'pay-per-call API';
-exports.permanent_pairing_secret = '0000';
-exports.control_addresses = [''];
+exports.deviceName = 'pay-per-call API server';
 
 exports.minChannelTimeoutInSecond = 1000; // minimal channel timeout acceptable
 exports.maxChannelTimeoutInSecond = 1000;  // maximal channel timeout acceptable
-exports.defaultTimeoutInSecond = 1000; // default timeout for channel creation
 
 exports.unconfirmedAmountsLimitsByAssetOrChannel = { // limits for accepting payments backed by unconfirmed deposit from peer
 	"base" : {
@@ -68,8 +65,6 @@ exports.bSingleAddress = true;
 
 exports.hub = process.env.testnet ? 'obyte.org/bb-test' : 'obyte.org/bb';
 exports.deviceName = 'pay-per-call API client';
-exports.permanent_pairing_secret = '0000';
-exports.control_addresses = [''];
 
 exports.defaultTimeoutInSecond = 1000; // default timeout for channel creation
 ```

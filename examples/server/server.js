@@ -6,7 +6,7 @@ const endPoints = {
 		if (asset != 'base')
 			return handle("wrong asset", null, amount_paid);
 		if (amount_paid < endPointPrice)
-			return handle("price: " + endPointPrice + ", received amount: " + amount, null, amount_paid);
+			return handle("price: " + endPointPrice + ", received amount: " + amount_paid, null, amount_paid);
 		var lat = arrArguments[0];
 		var long = arrArguments[1];
 		if (lat < -90 || lat > 90)
@@ -33,7 +33,7 @@ const endPoints = {
 }
 
 
-const server = new payPerCall.Server(endPoints, 6000, 60*20); // we listen on port 6000
+const server = new payPerCall.Server(endPoints, 6000, 60*60*24*7); // we listen on port 6000
 
 server.startWhenReady().then(function(){ // server will actually starts after the passphrase for headless wallet is entered
 	console.error("server started") 
