@@ -9,8 +9,6 @@ client.startWhenReady().then(async function(){
 	console.error(result.error);
 	console.error(result.result);
 	console.error(result.refunded_amount);
-	client.sweep();
-
 });
 
 
