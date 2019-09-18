@@ -123,6 +123,7 @@ class Client {
 							return reject(error);
 						this.aa_address = aa_address;
 						channels.setAutoRefill(aa_address, this.fill_amount, this.refill_threshold, ()=>{});
+						return resolve();
 					});
 				} else {
 					this.aa_address = aa_addresses[0];
