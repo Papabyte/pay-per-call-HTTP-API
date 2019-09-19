@@ -112,7 +112,7 @@ class Client {
 		return new Promise((resolve, reject) => {
 			if (!isHeadlessReady)
 				throw Error("Headless not ready");
-			channels.getChannelsForPeer(this.peer_url, null, (error, aa_addresses) => {
+			channels.getChannelsForPeer(this.peer_url, this.asset, (error, aa_addresses) => {
 				if (error) {
 					console.log("no channel found for this peer, I'll create one");
 					channels.createNewChannel(this.peer_url, this.fill_amount, {
