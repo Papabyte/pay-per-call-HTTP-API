@@ -1,5 +1,5 @@
 {
-	"name": "API-server",
+	"name": "HTTP-API-server",
 	"version": "1.0.0",
 	"description": "Example API server",
 	"main": "start.js",

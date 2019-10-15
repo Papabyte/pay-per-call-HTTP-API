@@ -4,10 +4,10 @@ const eventBus = require("ocore/event_bus.js");
 const validationUtils = require('ocore/validation_utils.js');
 const db = require('ocore/db.js');
 
-var isHeadlessReady = false;
+var areAAchannelsReady = false;
 
-eventBus.on('headless_wallet_ready', function(){
-	isHeadlessReady = true;
+eventBus.on('aa_channels_ready', function(){
+	areAAchannelsReady = true;
 });
 
 class Server {
@@ -15,25 +15,28 @@ class Server {
 		this.assocEndPoints = assocEndPoints;
 		this.port = port;
 		this.sweepingPeriod = sweepingPeriod;
+		if (areAAchannelsReady){
+			this.start();
+		} else {
+			eventBus.on('aa_channels_ready', ()=>{
+				this.start();
+			});
+		}
 	}
 
-	startWhenReady(){
+	async waitNodeIsReady(){
 		return new Promise((resolve) => {
-			if (isHeadlessReady){
-				this.start();
-				return resolve();
-			} else {
-				eventBus.on('headless_wallet_ready', ()=>{
-					this.start();
+			if (areAAchannelsReady){
 					return resolve();
+			} else {
+				eventBus.on('aa_channels_ready', ()=>{
+						return resolve();
 				});
 			}
 		})
 	}
 
 	start(){
-		if (!isHeadlessReady)
-			throw Error("Headless not ready");
 		channels.startHttpServer(this.port);
 		channels.setCallBackForPaymentReceived((amount, asset, arrReceivedFromPeer, aa_address, handle) => {
 			const endPoint = arrReceivedFromPeer[0];
@@ -43,7 +46,7 @@ class Server {
 			//in return, we should obtain an error or a result, and possibly an amount that has to be refunded
 			this.assocEndPoints[endPoint](amount, asset, arrAguments, function(error, result, refunded_amount) {
 				if (error) {
-					channels.getPaymentPackage(amount, aa_address, function(getPackageError, objPaymentPackage){
+					channels.createPaymentPackage(amount, aa_address, function(getPackageError, objPaymentPackage){
 						if (getPackageError)
 							return handle({error: error})
 						else
@@ -51,7 +54,7 @@ class Server {
 					});
 				} else {
 					if (refunded_amount > 0){ // if we were instructed to send a refund, we get the corresponding payment package
-						channels.getPaymentPackage(amount, aa_address, function(getPackageError, objPaymentPackage){
+						channels.createPaymentPackage(amount, aa_address, function(getPackageError, objPaymentPackage){
 							if (getPackageError)
 								return handle(null, {result: result});
 							else
@@ -68,9 +71,8 @@ class Server {
 		}, 60000);
 	}
 	// we read timestamp corresponding to last updating mci of opened channel, if too old we close it to sweep fund on it
-	sweepChannelsIfPeriodExpired(sweepingPeriod){
-		if (!isHeadlessReady)
-			throw Error("Headless not ready");
+	async sweepChannelsIfPeriodExpired(sweepingPeriod){
+		await this.waitNodeIsReady()
 		db.query("SELECT aa_address FROM channels INNER JOIN units ON units.main_chain_index=channels.last_updated_mci \n\
 		WHERE status='open' AND (strftime('%s', 'now')-timestamp) > ?", [sweepingPeriod], (rows)=>{
 			rows.forEach((row)=>{
@@ -89,20 +91,22 @@ class Client {
 		this.asset = asset;
 		this.fill_amount = fill_amount;
 		this.refill_threshold = refill_threshold;
+		if (areAAchannelsReady){
+			this.start();
+		} else {
+			eventBus.on('aa_channels_ready', ()=>{
+				this.start();
+			});
+		}
 	}
 
-	startWhenReady(){
-		return new Promise((resolve, reject) => {
-			if (isHeadlessReady){
-				setTimeout(()=>{
-					this.start().then(resolve, reject);
-				}, 2000);
-			}
-			else {
-				eventBus.on('headless_wallet_ready', ()=>{
-					setTimeout(()=>{
-						this.start().then(resolve, reject);
-					}, 2000);				
+	waitNodeIsReady(){
+		return new Promise((resolve) => {
+			if (this.aa_address ){
+					return resolve();
+			} else {
+				eventBus.on('client_ready', ()=>{
+						return resolve();
 				});
 			}
 		})
@@ -110,8 +114,6 @@ class Client {
 
 	start(){
 		return new Promise((resolve, reject) => {
-			if (!isHeadlessReady)
-				throw Error("Headless not ready");
 			channels.getChannelsForPeer(this.peer_url, this.asset, (error, aa_addresses) => {
 				if (error) {
 					console.log("no channel found for this peer, I'll create one");
@@ -120,13 +122,15 @@ class Client {
 						asset: this.asset
 					}, (error, aa_address)=>{
 						if (error)
-							return reject(error);
+							throw Error(error);
 						this.aa_address = aa_address;
+						eventBus.emit('client_ready')
 						channels.setAutoRefill(aa_address, this.fill_amount, this.refill_threshold, ()=>{});
 						return resolve();
 					});
 				} else {
 					this.aa_address = aa_addresses[0];
+					eventBus.emit('client_ready')
 					channels.setAutoRefill(aa_addresses[0], this.fill_amount, this.refill_threshold, ()=>{});
 					return resolve();
 				}
@@ -135,9 +139,8 @@ class Client {
 	}
 
 	call(endpoint, amount, arrArguments){
-		return new Promise((resolve, reject) => {
-			if (!isHeadlessReady)
-				return reject("Headless not ready");
+		return new Promise(async (resolve, reject) => {
+			await this.waitNodeIsReady();
 			if (!validationUtils.isPositiveInteger(amount))
 				return reject("amount must be a positive integer");
 			if (!Array.isArray(arrArguments))
@@ -194,9 +197,8 @@ class Client {
 	}
 
 	sweep() {
-		return new Promise((resolve, reject) => {
-			if (!isHeadlessReady)
-				return reject("Headless not ready");
+		return new Promise(async (resolve, reject) => {
+			await this.waitNodeIsReady();
 			channels.close(this.aa_address, (error)=>{
 				if (error){
 					console.log(error + ", will retry later");
@@ -211,9 +213,8 @@ class Client {
 	}
 
 	close() {
-		return new Promise((resolve, reject) => {
-			if (!isHeadlessReady)
-				return reject("Headless not ready");
+		return new Promise(async (resolve, reject) => {
+			await this.waitNodeIsReady();
 			this.sweep().then(()=>{
 				channels.setAutoRefill(this.aa_address, 0, 0, ()=>{
 					return resolve();
