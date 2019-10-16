@@ -48,12 +48,8 @@ const endPoints = {
 }
 ```
 
-* Start server
-```javascript
-server.startWhenReady().then(function(){ // server will actually starts after the passphrase for headless wallet is entered
-	console.error("server started");
-});
-```
+While any channel is open, it's necessary to keep your server node online and running since it has to watch Obyte network for any dishonest channel closure tentative from peer.
+
 
 ## Client side
 
@@ -73,17 +69,11 @@ exports.defaultTimeoutInSecond = 1000; // default timeout for channel creation
 
 * Initialize `const client = new payPerCall.Client(peer url, asset, deposits amount, refill threshold);`
 
-* Start client
-```javascript
-client.startWhenReady().then(async function(){ // client will actually starts after the passphrase for headless wallet is entered
-	console.error("client started");
-});
-```
-
-After client started, these functions are available:
 
 * Call endpoint `const result = await client.call(endpoint, amount, [argument1, argument2]);`
 
 * Sweep channel (closing then reopening) when convenient `client.sweepChannel();`, it should happen within the max sweeping period imposed by the server.
 
 * Close channel when you don't need it anymore `client.closeChannel()`
+
+While any channel is open, it's necessary to keep your client node online and running since it has to watch Obyte network for any dishonest channel closure tentative from peer.
