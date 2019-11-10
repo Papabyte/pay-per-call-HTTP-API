@@ -1,7 +1,12 @@
 # pay-per-call-HTTP-API
 
 This package provides an easy way to set-up an HTTP API where users pay instantly query by query through [O<sub>byte</sub> payment channels](https://github.com/Papabyte/aa-channels-lib/).
-
+They deposit funds to an Autonomous Agent that is programmed to release settlement payments according to messages signed by them. Then instead of sending funds onchain, they provide signed messages basically saying `I’m peer A, I owe n bytes to peer B`.\
+For each payment, `n` is increased by the desired payment amount and the server checks that the difference with previous signed message will cover the amount.\
+`n` being never decreased, when server want to proceed a refund, it sends a message saying `I’m peer B, I owe n bytes to peer A`.\
+When a party closes the channel, it provides to AA the last message signed by its peer indicating how much peer owes as well as the amount it owes to peer. There is then a timeout period during which the peer can contest if the peer was dishonest by lowering the amount it owns. The peer either confirms or provides a fraud proof if peer was dishonest.\
+It's important that server and client stay online while they have a channel opened to watch for any attempt of fraudulent closure.
+For better user experience, it's possible to accept unconfirmed transactions as deposit so user can start to use API without waiting time after having deposited funds. Some settings are available to mitigate the risk of double-spending fraud attempts.
 
 ## Server side
 
@@ -10,7 +15,6 @@ This package provides an easy way to set-up an HTTP API where users pay instantl
 * Create a conf.js file in your project root folder
 
 ```javascript
-exports.bServeAsHub = false;
 exports.bLight = true;
 exports.bSingleAddress = true;
 
@@ -48,14 +52,12 @@ const endPoints = {
 }
 ```
 
-While any channel is open, it's necessary to keep your server node online and running since it has to watch Obyte network for any dishonest channel closure tentative from peer.
-
+See detailed [documentation](examples/server/README.md)
 
 ## Client side
 
 * Create a conf.js file in your project root folder
 ```javascript
-exports.bServeAsHub = false;
 exports.bLight = true;
 exports.bSingleAddress = true;
 
@@ -69,11 +71,10 @@ exports.defaultTimeoutInSeconds = 1000; // default timeout for channel creation
 
 * Initialize `const client = new payPerCall.Client(peer url, asset, deposits amount, refill threshold);`
 
-
 * Call endpoint `const result = await client.call(endpoint, amount, [argument1, argument2]);`
 
 * Sweep channel (closing then reopening) when convenient `client.sweepChannel();`, it should happen within the max sweeping period imposed by the server.
 
 * Close channel when you don't need it anymore `client.closeChannel()`
 
-While any channel is open, it's necessary to keep your client node online and running since it has to watch Obyte network for any dishonest channel closure tentative from peer.
+See detailed [documentation](examples/client/README.md)
