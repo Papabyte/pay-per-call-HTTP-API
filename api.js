@@ -46,16 +46,16 @@ class Server {
 			//in return, we should obtain an error or a result, and possibly an amount that has to be refunded
 			this.assocEndPoints[endPoint](amount, asset, arrAguments, function(error, result, refunded_amount) {
 				if (error) {
-					channels.createPaymentPackage(amount, aa_address, function(getPackageError, objPaymentPackage){
-						if (getPackageError)
+					channels.createPaymentPackage(amount, aa_address, function(packageError, objPaymentPackage){
+						if (packageError)
 							return handle({error: error})
 						else
 							return handle({error: error, refund: objPaymentPackage});
 					});
 				} else {
 					if (refunded_amount > 0){ // if we were instructed to send a refund, we get the corresponding payment package
-						channels.createPaymentPackage(amount, aa_address, function(getPackageError, objPaymentPackage){
-							if (getPackageError)
+						channels.createPaymentPackage(refunded_amount, aa_address, function(packageError, objPaymentPackage){
+							if (packageError)
 								return handle(null, {result: result});
 							else
 								return handle(null, {result: result, refund: objPaymentPackage});
@@ -70,7 +70,7 @@ class Server {
 			this.sweepChannelsIfPeriodExpired(this.sweepingPeriod);
 		}, 60000);
 	}
-	// we read timestamp corresponding to last updating mci of opened channel, if too old we close it to sweep fund on it
+	// we read timestamp corresponding to last updating mci of opened channel, if too old we close it to sweep funds on it
 	async sweepChannelsIfPeriodExpired(sweepingPeriod){
 		await this.waitNodeIsReady()
 		db.query("SELECT aa_address FROM channels INNER JOIN units ON units.main_chain_index=channels.last_updated_mci \n\
